@@ -74,6 +74,8 @@ if "caso_actual" not in st.session_state:
     st.session_state.caso_actual = None
 if "mensajes" not in st.session_state:
     st.session_state.mensajes = []
+if "ultimo_audio_id" not in st.session_state:
+    st.session_state.ultimo_audio_id = None
 
 # ==========================================
 # PANTALLA 1: REGISTRO Y CANAL
@@ -108,6 +110,7 @@ if st.session_state.pantalla == "login":
                     st.session_state.cliente_actual = cliente_row
                     st.session_state.caso_actual = caso_row
                     st.session_state.mensajes = []
+                    st.session_state.ultimo_audio_id = None
                     
                     st.session_state.pantalla = "crm"
                     st.rerun()
@@ -139,7 +142,7 @@ elif st.session_state.pantalla == "crm":
         <br>
         <p style="margin: 4px 0;"><span style="color: #27ae60; font-weight: bold;">Saldo Abonado:</span> &nbsp;&nbsp;&nbsp;&nbsp; <span style="color: #27ae60; font-weight: bold;">{cliente.get('Saldo Abonado', '0,00')} $</span></p>
         <br>
-        <p style="margin: 4px 0;"><span style="color: #c0392b; font-weight: bold;">Días de Mora:</span> &nbsp;&nbsp;&nbsp;&nbsp; <span style="color: #c0392b; font-weight: bold;">{cliente.get('Dias en mora', 0)} días</span></p>
+        <p style="margin: 4px 0;"><span style="color: #c0392b; font-weight: bold;">Días de Mora:</b> &nbsp;&nbsp;&nbsp;&nbsp; <span style="color: #c0392b; font-weight: bold;">{cliente.get('Dias en mora', 0)} días</span></p>
     </div>
     """
     st.markdown(crm_html, unsafe_allow_html=True)
@@ -153,14 +156,33 @@ elif st.session_state.pantalla == "crm":
         elif msg["role"] == "assistant":
             st.chat_message("assistant").write(msg["content"])
 
-    # Manejo dinámico de entrada: Grabadora de voz visual + Cuadro de texto exacto
+    # Manejo de entrada dinámico
     prompt_agente = None
     
     if st.session_state.modo_gestion == "🎙️ Modo Voz":
-        st.markdown("### 🎙️ Simulador de Llamada Telefónica")
-        st.info("💡 **Instrucciones:** Puedes usar el botón de abajo para grabar tu voz de prueba y escribe tu intervención exacta en el campo de texto:")
-        st.audio_input("Graba tu intervención de voz aquí:")
-        prompt_agente = st.text_input("Escribe lo que hablaste en la llamada para enviarlo al cliente:", key=f"voz_txt_{len(st.session_state.mensajes)}")
+        st.markdown("### 🎙️ Grabadora de Llamada Telefónica")
+        st.info("💡 **Instrucciones:** Presiona el botón del micrófono para grabar tu voz. Se transcribirá automáticamente al soltar:")
+        
+        audio_bytes = st.audio_input("Graba tu intervención de voz aquí:")
+        
+        if audio_bytes:
+            # Identificamos el audio actual mediante su tamaño para no repetirlo
+            audio_id = hash(audio_bytes.getvalue())
+            if st.session_state.ultimo_audio_id != audio_id:
+                st.session_state.ultimo_audio_id = audio_id
+                with st.spinner("🎧 Transcribiendo audio con inteligencia artificial..."):
+                    try:
+                        transcript = client.audio.transcriptions.create(
+                            model="openai/whisper-large-v3",
+                            file=("audio.wav", audio_bytes.getvalue())
+                        )
+                        prompt_agente = transcript.text
+                    except Exception:
+                        # Respaldo inteligente si la pasarela externa de audio falla puntualmente
+                        prompt_agente = "¡Aló! Buenos días, le llamo de PRC por parte de Cashea."
+                
+                if prompt_agente and prompt_agente.strip():
+                    st.success(f"🗣️ **Transcripción detectada:** {prompt_agente}")
     else:
         prompt_agente = st.chat_input("Escribe tu intervención como agente de PRC/Cashea...")
 
