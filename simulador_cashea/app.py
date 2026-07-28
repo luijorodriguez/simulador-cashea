@@ -8,10 +8,9 @@ from openai import OpenAI
 # --- CONFIGURACIÓN DE PÁGINA ---
 st.set_page_config(page_title="Simulador de Cobranzas - PRC / Cashea", layout="wide", initial_sidebar_state="collapsed")
 
-# Inicialización de la API de OpenAI
+# Inicialización directa con la API oficial de OpenAI (Soporta Chat y Whisper al 100%)
 client = OpenAI(
-    api_key=st.secrets["OPENAI_API_KEY"],
-    base_url="https://openrouter.ai/api/v1"
+    api_key=st.secrets["OPENAI_API_KEY"]
 )
 
 # --- MATRIZ DE LOS 30 CASOS DE CLIENTES ---
@@ -142,7 +141,7 @@ elif st.session_state.pantalla == "crm":
         <br>
         <p style="margin: 4px 0;"><span style="color: #27ae60; font-weight: bold;">Saldo Abonado:</span> &nbsp;&nbsp;&nbsp;&nbsp; <span style="color: #27ae60; font-weight: bold;">{cliente.get('Saldo Abonado', '0,00')} $</span></p>
         <br>
-        <p style="margin: 4px 0;"><span style="color: #c0392b; font-weight: bold;">Días de Mora:</b> &nbsp;&nbsp;&nbsp;&nbsp; <span style="color: #c0392b; font-weight: bold;">{cliente.get('Dias en mora', 0)} días</span></p>
+        <p style="margin: 4px 0;"><span style="color: #c0392b; font-weight: bold;">Días de Mora:</span> &nbsp;&nbsp;&nbsp;&nbsp; <span style="color: #c0392b; font-weight: bold;">{cliente.get('Dias en mora', 0)} días</span></p>
     </div>
     """
     st.markdown(crm_html, unsafe_allow_html=True)
@@ -156,37 +155,34 @@ elif st.session_state.pantalla == "crm":
         elif msg["role"] == "assistant":
             st.chat_message("assistant").write(msg["content"])
 
-    # Manejo de entrada dinámico
+    # Manejo dinámico de entrada
     prompt_agente = None
     
     if st.session_state.modo_gestion == "🎙️ Modo Voz":
-        st.markdown("### 🎙️ Grabadora de Llamada Telefónica")
-        st.info("💡 **Instrucciones:** Presiona el botón del micrófono para grabar tu voz. Se transcribirá automáticamente al soltar:")
+        st.markdown("### 🎙️ Simulación de Llamada por Voz")
+        st.info("💡 **Instrucción:** Presiona el botón del micrófono para hablar. Tu voz se transcribirá automáticamente y se enviará al cliente:")
         
-        audio_bytes = st.audio_input("Graba tu intervención de voz aquí:")
+        audio_bytes = st.audio_input("Graba tu intervención de voz:")
         
         if audio_bytes:
-            # Identificamos el audio actual mediante su tamaño para no repetirlo
             audio_id = hash(audio_bytes.getvalue())
             if st.session_state.ultimo_audio_id != audio_id:
                 st.session_state.ultimo_audio_id = audio_id
-                with st.spinner("🎧 Transcribiendo audio con inteligencia artificial..."):
+                with st.spinner("🎧 Transcribiendo llamada con Whisper..."):
                     try:
                         transcript = client.audio.transcriptions.create(
-                            model="openai/whisper-large-v3",
-                            file=("audio.wav", audio_bytes.getvalue())
+                            model="whisper-1",
+                            file=("audio.wav", audio_bytes.getvalue()),
+                            language="es"
                         )
                         prompt_agente = transcript.text
-                    except Exception:
-                        # Respaldo inteligente si la pasarela externa de audio falla puntualmente
-                        prompt_agente = "¡Aló! Buenos días, le llamo de PRC por parte de Cashea."
-                
-                if prompt_agente and prompt_agente.strip():
-                    st.success(f"🗣️ **Transcripción detectada:** {prompt_agente}")
+                        st.success(f"🗣️ **Tú (Voz):** {prompt_agente}")
+                    except Exception as e:
+                        st.error(f"Error al transcribir audio: {e}")
     else:
         prompt_agente = st.chat_input("Escribe tu intervención como agente de PRC/Cashea...")
 
-    if prompt_agente:
+    if prompt_agente and prompt_agente.strip():
         st.session_state.mensajes.append({"role": "user", "content": prompt_agente})
         st.chat_message("user").write(prompt_agente)
         
@@ -219,7 +215,7 @@ elif st.session_state.pantalla == "crm":
         
         api_messages = [{"role": "system", "content": system_prompt_cliente}] + st.session_state.mensajes
         response = client.chat.completions.create(
-            model="openai/gpt-4o-mini",
+            model="gpt-4o-mini",
             messages=api_messages,
             temperature=0.7
         )
@@ -288,7 +284,7 @@ elif st.session_state.pantalla == "evaluacion":
         """
         
         response_eval = client.chat.completions.create(
-            model="openai/gpt-4o-mini",
+            model="gpt-4o-mini",
             messages=[{"role": "system", "content": system_prompt_auditor}],
             response_format={"type": "json_object"}
         )
