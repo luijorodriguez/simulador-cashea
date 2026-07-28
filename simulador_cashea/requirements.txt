@@ -5,3 +5,4 @@ openai
 gtts
 audio-recorder-streamlit
 SpeechRecognition
+google-generativeai
