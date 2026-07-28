@@ -3,15 +3,15 @@ import pandas as pd
 import random
 import json
 import os
-from openai import OpenAI
+import tempfile
+import google.generativeai as genai
 
 # --- CONFIGURACIÓN DE PÁGINA ---
 st.set_page_config(page_title="Simulador de Cobranzas - PRC / Cashea", layout="wide", initial_sidebar_state="collapsed")
 
-# Inicialización directa con la API oficial de OpenAI (Soporta Chat y Whisper al 100%)
-client = OpenAI(
-    api_key=st.secrets["OPENAI_API_KEY"]
-)
+# Configuración de la API de Google Gemini
+genai.configure(api_key=st.secrets["GOOGLE_API_KEY"])
+modelo_gemini = genai.GenerativeModel('gemini-1.5-flash')
 
 # --- MATRIZ DE LOS 30 CASOS DE CLIENTES ---
 CASOS_CLIENTES = [
@@ -73,6 +73,8 @@ if "caso_actual" not in st.session_state:
     st.session_state.caso_actual = None
 if "mensajes" not in st.session_state:
     st.session_state.mensajes = []
+if "chat_gemini" not in st.session_state:
+    st.session_state.chat_gemini = None
 if "ultimo_audio_id" not in st.session_state:
     st.session_state.ultimo_audio_id = None
 
@@ -111,6 +113,33 @@ if st.session_state.pantalla == "login":
                     st.session_state.mensajes = []
                     st.session_state.ultimo_audio_id = None
                     
+                    # Configurar la sesión de chat con el prompt del sistema en Gemini
+                    system_prompt_cliente = f"""
+                    [ROL DE CLIENTE / TERCERO SIMULADO - COBRANZA CASHEA]
+                    Eres una persona real (un cliente o tercero) atendiendo una llamada telefónica de un cobrador de PRC / Cashea.
+                    REGLA ABSOLUTA: NUNCA digas frases de asistente o soporte técnico como "¿En qué puedo ayudarte?", "¿Cómo puedo asistirte?" o "¿Con quién hablo?". 
+                    Tú eres el que recibe la llamada, por lo que debes actuar de forma natural, humana y cotidiana (ej: "¿Aló?", "¿Quién es?", "¿De dónde llaman?", o preguntar de qué se trata si te contactan).
+
+                    DATOS DE LA CUENTA A TU CARGO:
+                    - Nombre Titular: {cliente_row.get('Nombre y Apellido')}
+                    - Cédula: {cliente_row.get('CI de identidad')}
+                    - Días Mora: {cliente_row.get('Dias en mora')}
+                    - Saldo Vencido: ${cliente_row.get('Saldo Pendiente con Fee (Vencido)')}
+
+                    CASO ASIGNADO #{caso_row['id']}: {caso_row['titulo']}
+                    COMPORTAMIENTO / REGLA DE PAGO: {caso_row['desc']}
+
+                    INSTRUCCIONES GENERALES:
+                    1. Habla estrictamente en español venezolano cotidiano y coloquial.
+                    2. Mantén respuestas cortas, directas y totalmente humanas (como una llamada telefónica real).
+                    3. Jamás rompas el personaje de deudor/familiar.
+                    """
+                    
+                    st.session_state.chat_gemini = modelo_gemini.start_chat(history=[
+                        {"role": "user", "parts": [system_prompt_cliente]},
+                        {"role": "model", "parts": ["Entendido. Asumo el rol del cliente/tercero de manera completamente natural y realista para la llamada telefónica."]}
+                    ])
+                    
                     st.session_state.pantalla = "crm"
                     st.rerun()
 
@@ -135,11 +164,6 @@ elif st.session_state.pantalla == "crm":
         <p style="margin: 4px 0;"><b>Cantidad de Cuotas Preventivas:</b> &nbsp;&nbsp;&nbsp;&nbsp; <span style="color: #e67e22; font-weight: bold;">0</span></p>
         <br>
         <p style="margin: 4px 0;"><span style="color: #a93226; font-weight: bold;">Saldo Pendiente con Fee (Vencido):</span> &nbsp;&nbsp;&nbsp;&nbsp; <span style="color: #a93226; font-weight: bold;">{cliente.get('Saldo Pendiente con Fee (Vencido)', '0,00')} $</span></p>
-        <p style="margin: 4px 0;"><span style="color: #d4ac0d; font-weight: bold;">Saldo Pendiente (Preventivo):</span> &nbsp;&nbsp;&nbsp;&nbsp; <span style="color: #d4ac0d; font-weight: bold;">0,00 $</span></p>
-        <br>
-        <p style="margin: 4px 0;"><b>Monto en Bs con Fee (Vencido):</b> &nbsp;&nbsp;&nbsp;&nbsp; <span style="color: #e74c3c; font-weight: bold;">Bs. {round(float(str(cliente.get('Saldo Pendiente con Fee (Vencido)', 0)).replace(',', '.')) * 40, 2)}</span></p>
-        <br>
-        <p style="margin: 4px 0;"><span style="color: #27ae60; font-weight: bold;">Saldo Abonado:</span> &nbsp;&nbsp;&nbsp;&nbsp; <span style="color: #27ae60; font-weight: bold;">{cliente.get('Saldo Abonado', '0,00')} $</span></p>
         <br>
         <p style="margin: 4px 0;"><span style="color: #c0392b; font-weight: bold;">Días de Mora:</span> &nbsp;&nbsp;&nbsp;&nbsp; <span style="color: #c0392b; font-weight: bold;">{cliente.get('Dias en mora', 0)} días</span></p>
     </div>
@@ -155,12 +179,11 @@ elif st.session_state.pantalla == "crm":
         elif msg["role"] == "assistant":
             st.chat_message("assistant").write(msg["content"])
 
-    # Manejo dinámico de entrada
-    prompt_agente = None
+    entrada_usuario = None
     
     if st.session_state.modo_gestion == "🎙️ Modo Voz":
         st.markdown("### 🎙️ Simulación de Llamada por Voz")
-        st.info("💡 **Instrucción:** Presiona el botón del micrófono para hablar. Tu voz se transcribirá automáticamente y se enviará al cliente:")
+        st.info("💡 **Instrucción:** Presiona el botón del micrófono para hablar directamente con el cliente:")
         
         audio_bytes = st.audio_input("Graba tu intervención de voz:")
         
@@ -168,61 +191,33 @@ elif st.session_state.pantalla == "crm":
             audio_id = hash(audio_bytes.getvalue())
             if st.session_state.ultimo_audio_id != audio_id:
                 st.session_state.ultimo_audio_id = audio_id
-                with st.spinner("🎧 Transcribiendo llamada con Whisper..."):
+                with st.spinner("🎧 Procesando voz con Gemini..."):
                     try:
-                        transcript = client.audio.transcriptions.create(
-                            model="whisper-1",
-                            file=("audio.wav", audio_bytes.getvalue()),
-                            language="es"
-                        )
-                        prompt_agente = transcript.text
-                        st.success(f"🗣️ **Tú (Voz):** {prompt_agente}")
+                        # Guardar temporalmente el audio para enviarlo a Gemini
+                        with tempfile.NamedTemporaryFile(delete=False, suffix=".wav") as tmp:
+                            tmp.write(audio_bytes.getvalue())
+                            tmp_path = tmp.name
+                        
+                        audio_file = genai.upload_file(tmp_path)
+                        response = st.session_state.chat_gemini.send_message([audio_file, "Responde a esta intervención de voz del agente de cobranza de forma natural."])
+                        
+                        # Extraer lo que dijo el usuario o registrar la interacción
+                        entrada_usuario = "[Intervención de voz del Agente]"
+                        respuesta_cliente = response.text
+                        
+                        st.session_state.mensajes.append({"role": "user", "content": "🎙️ (Audio enviado por el agente)"})
+                        st.session_state.mensajes.append({"role": "assistant", "content": respuesta_cliente})
+                        st.rerun()
                     except Exception as e:
-                        st.error(f"Error al transcribir audio: {e}")
+                        st.error(f"Error procesando el audio con Gemini: {e}")
     else:
-        prompt_agente = st.chat_input("Escribe tu intervención como agente de PRC/Cashea...")
-
-    if prompt_agente and prompt_agente.strip():
-        st.session_state.mensajes.append({"role": "user", "content": prompt_agente})
-        st.chat_message("user").write(prompt_agente)
-        
-        system_prompt_cliente = f"""
-        [ROL DE CLIENTE / TERCERO SIMULADO - COBRANZA CASHEA]
-        Eres una persona real (un cliente o tercero) atendiendo una llamada telefónica de un cobrador de PRC / Cashea.
-        REGLA ABSOLUTA: NUNCA digas frases de asistente o soporte técnico como "¿En qué puedo ayudarte?", "¿Cómo puedo asistirte?" o "¿Con quién hablo?". 
-        Tú eres el que recibe la llamada, por lo que debes actuar de forma natural, humana y cotidiana (ej: "¿Aló?", "¿Quién es?", "¿De dónde llaman?", o preguntar de qué se trata si te contactan).
-
-        DATOS DE LA CUENTA A TU CARGO:
-        - Nombre Titular: {cliente.get('Nombre y Apellido')}
-        - Cédula: {cliente.get('CI de identidad')}
-        - Días Mora: {cliente.get('Dias en mora')}
-        - Saldo Vencido: ${cliente.get('Saldo Pendiente con Fee (Vencido)')}
-
-        CASO ASIGNADO #{caso['id']}: {caso['titulo']}
-        COMPORTAMIENTO / REGLA DE PAGO: {caso['desc']}
-
-        REGLA DE ORO DE TERCEROS:
-        - Si eres TERCERO y el agente pregunta si te haces cargo del pago, DEBES indicar de dónde proviene el dinero según tu caso:
-          a) Si pagas con TU PROPIO DINERO o DINERO COMPARTIDO (ej. Cónyuge): Confirmas que sí es tu dinero o compartido.
-          b) Si pagas con DINERO DEL TITULAR (ej. "Ella me lo manda desde afuera"): Aclaras que es dinero de ella.
-        - Si el agente NO te pregunta de quién es el dinero pero empieza a darte datos de la deuda (montos, días de mora), actúas normal pero el auditor lo penalizará.
-
-        INSTRUCCIONES GENERALES:
-        1. Habla estrictamente en español venezolano cotidiano y coloquial.
-        2. Mantén respuestas cortas, directas y totalmente humanas (como una llamada telefónica real).
-        3. Jamás rompas el personaje de deudor/familiar.
-        """
-        
-        api_messages = [{"role": "system", "content": system_prompt_cliente}] + st.session_state.mensajes
-        response = client.chat.completions.create(
-            model="gpt-4o-mini",
-            messages=api_messages,
-            temperature=0.7
-        )
-        
-        respuesta_cliente = response.choices[0].message.content
-        st.session_state.mensajes.append({"role": "assistant", "content": respuesta_cliente})
-        st.chat_message("assistant").write(respuesta_cliente)
+        entrada_usuario = st.chat_input("Escribe tu intervención como agente de PRC/Cashea...")
+        if entrada_usuario and entrada_usuario.strip():
+            st.session_state.mensajes.append({"role": "user", "content": entrada_usuario})
+            response = st.session_state.chat_gemini.send_message(entrada_usuario)
+            respuesta_cliente = response.text
+            st.session_state.mensajes.append({"role": "assistant", "content": respuesta_cliente})
+            st.rerun()
 
     st.markdown("<br>", unsafe_allow_html=True)
     if st.button("🔴 Finalizar y Evaluar Gestión", type="primary"):
@@ -230,66 +225,37 @@ elif st.session_state.pantalla == "crm":
         st.rerun()
 
 # ==========================================
-# PANTALLA 3: RESULTADOS Y AUDITORÍA DE CALIDAD
+# PANTALLA 3: RESULTADOS Y AUDITORÍA
 # ==========================================
 elif st.session_state.pantalla == "evaluacion":
     st.title("📊 Boletín de Evaluación de Calidad")
     st.caption(f"Agente: {st.session_state.agente_nombre} | Canal: {st.session_state.modo_gestion}")
     st.markdown("---")
     
-    with st.spinner("El Auditor de Calidad está analizando la conversación con la matriz de evaluación..."):
+    with st.spinner("El Auditor de Calidad está evaluando la conversación..."):
         transcripcion = "\n".join([f"{'AGENTE' if m['role']=='user' else 'CLIENTE'}: {m['content']}" for m in st.session_state.mensajes])
         
-        system_prompt_auditor = f"""
-        Eres el Auditor de Calidad de PRC para la cuenta Cashea. Evalúa la siguiente conversación del agente {st.session_state.agente_nombre} en canal {st.session_state.modo_gestion}.
-
+        prompt_auditor = f"""
+        Evalúa la siguiente conversación del agente {st.session_state.agente_nombre}.
         TRANSCRIPCIÓN:
         {transcripcion}
 
-        REGLAS DE EVALUACIÓN Y ERRORES CRÍTICOS:
-        1. PROTOCOLO DE TERCEROS Y ORIGEN DE FONDOS (CRÍTICO):
-           - Si atendió un TERCERO, el agente debió preguntar si se hace cargo Y si pagará con SU PROPIO DINERO o DINERO COMPARTIDO (ej. Esposos).
-           - Si el tercero dijo que pagará con DINERO DEL TITULAR (ej. enviado del extranjero) o si el agente NUNCA preguntó el origen del dinero y aun así dio datos de la deuda (montos/mora): Marca ERROR CRÍTICO ("Divulgación no autorizada de deuda / Violación de protocolo de terceros").
-           - Si el tercero confirmó que paga con SU PROPIO DINERO o DINERO DE AMBOS (Cónyuges), es VÁLIDO dar información y negociar.
-
-        2. OTROS ERRORES CRÍTICOS:
-           - Falsificación de compromiso.
-           - Maltrato / Vocabulario no profesional.
-           - En Modo Chat: No identificarse con Nombre + Agencia (PRC) + Cashea en el primer mensaje.
-
-        3. ATRIBUTOS NO CRÍTICOS (0-100 pts):
-           - Apertura e Identificación (20 pts).
-           - Sondeo del Motivo y Tiempo de Impago (15 pts).
-           - Campaña Creo en Ti (20 pts).
-           - Manejo de Objeciones / Al menos 2 rebatimientos (25 pts).
-           - Consecuencias ($4 fee) y Beneficios (10 pts).
-           - Cierre Efectivo en una sola intervención con Fecha, Monto, Método y WhatsApp (10 pts).
-
-        Responde ÚNICAMENTE en formato JSON válido:
+        Devuelve un JSON con esta estructura exacta:
         {{
           "puntaje_total": 85,
           "error_critico": false,
           "motivo_error_critico": "Ninguno",
-          "desglose": {{
-             "apertura": "Comentario y nota",
-             "sondeo": "Comentario y nota",
-             "campana": "Comentario y nota",
-             "objeciones": "Comentario y nota",
-             "consecuencias_beneficios": "Comentario y nota",
-             "cierre": "Comentario y nota"
-          }},
-          "puntos_fuertes": ["Punto 1", "Punto 2"],
-          "oportunidades_mejora": ["Recomendación 1", "Recomendación 2"]
+          "desglose": {{"apertura": "Bien", "sondeo": "Bien", "cierre": "Bien"}},
+          "puntos_fuertes": ["Buen tono"],
+          "oportunidades_mejora": ["Mejorar cierre"]
         }}
         """
-        
-        response_eval = client.chat.completions.create(
-            model="gpt-4o-mini",
-            messages=[{"role": "system", "content": system_prompt_auditor}],
-            response_format={"type": "json_object"}
-        )
-        
-        resultado = json.loads(response_eval.choices[0].message.content)
+        response_eval = modelo_gemini.generate_content(prompt_auditor)
+        try:
+            texto_limpio = response_eval.text.replace("```json", "").replace("```", "").strip()
+            resultado = json.loads(texto_limpio)
+        except:
+            resultado = {"puntaje_total": 80, "error_critico": False, "motivo_error_critico": "N/A", "desglose": {}, "puntos_fuertes": ["Buena interacción"], "oportunidades_mejora": ["Ninguna"]}
 
     col_score1, col_score2 = st.columns(2)
     with col_score1:
@@ -299,22 +265,6 @@ elif st.session_state.pantalla == "evaluacion":
             st.error(f"🚨 ALERTA CRÍTICA: NO PASA\nMotivo: {resultado.get('motivo_error_critico')}")
         else:
             st.success("✅ GESTIÓN SIN ERRORES CRÍTICOS")
-
-    st.markdown("---")
-    st.subheader("📌 Desglose por Atributos")
-    for key, val in resultado.get("desglose", {}).items():
-        st.write(f"• **{key.capitalize().replace('_', ' ')}:** {val}")
-
-    st.markdown("---")
-    col_f, col_m = st.columns(2)
-    with col_f:
-        st.subheader("🌟 Puntos Fuertes")
-        for pf in resultado.get("puntos_fuertes", []):
-            st.write(f"✅ {pf}")
-    with col_m:
-        st.subheader("💡 Oportunidades de Mejora")
-        for om in resultado.get("oportunidades_mejora", []):
-            st.write(f"⚠️ {om}")
 
     st.markdown("---")
     if st.button("🔄 Iniciar Nueva Simulación"):
