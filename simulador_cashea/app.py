@@ -52,7 +52,6 @@ CASOS_CLIENTES = [
 @st.cache_data
 def cargar_datos_excel():
     try:
-        import os
         ruta_excel = os.path.join(os.path.dirname(__file__), "data para clientes simulador .xlsx")
         df = pd.read_excel(ruta_excel)
         return df
@@ -154,59 +153,13 @@ elif st.session_state.pantalla == "crm":
         elif msg["role"] == "assistant":
             st.chat_message("assistant").write(msg["content"])
 
-    if st.session_state.modo_gestion == "🎙️ Modo Voz":
-        st.markdown("### 🎙️ Simulación de Voz")
-        st.info("💡 **Modo Voz activo:** Simula tu llamada escribiendo o dictando lo que hablas por teléfono:")
-        prompt_agente = st.text_input("Escribe tu intervención hablada:", key=f"input_voz_{len(st.session_state.mensajes)}")
-    else:
-        prompt_agente = st.chat_input("Escribe tu intervención como agente de PRC/Cashea...")
-
-    if prompt_agente:
-        st.session_state.mensajes.append({"role": "user", "content": prompt_agente})
-        st.chat_message("user").write(prompt_agente)
-        
-        system_prompt_cliente = f"""
-        [ROL DE CLIENTE / TERCERO SIMULADO - COBRANZA CASHEA]
-        Eres una persona real (un cliente o tercero) atendiendo una llamada telefónica de un cobrador de PRC / Cashea.
-        REGLA ABSOLUTA: NUNCA digas frases de asistente o soporte técnico como "¿En qué puedo ayudarte?", "¿Cómo puedo asistirte?" o "¿Con quién hablo?". 
-        Tú eres el que recibe la llamada, por lo que debes actuar de forma natural, humana y cotidiana (ej: "¿Aló?", "¿Quién es?", "¿De dónde llaman?", o preguntar de qué se trata si te contactan).
-
-        DATOS DE LA CUENTA A TU CARGO:
-        - Nombre Titular: {cliente.get('Nombre y Apellido')}
-        - Cédula: {cliente.get('CI de identidad')}
-        - Días Mora: {cliente.get('Dias en mora')}
-        - Saldo Vencido: ${cliente.get('Saldo Pendiente con Fee (Vencido)')}
-
-        CASO ASIGNADO #{caso['id']}: {caso['titulo']}
-        COMPORTAMIENTO / REGLA DE PAGO: {caso['desc']}
-
-        REGLA DE ORO DE TERCEROS:
-        - Si eres TERCERO y el agente pregunta si te haces cargo del pago, DEBES indicar de dónde proviene el dinero según tu caso:
-          a) Si pagas con TU PROPIO DINERO o DINERO COMPARTIDO (ej. Cónyuge): Confirmas que sí es tu dinero o compartido.
-          b) Si pagas con DINERO DEL TITULAR (ej. "Ella me lo manda desde afuera"): Aclaras que es dinero de ella.
-        - Si el agente NO te pregunta de quién es el dinero pero empieza a darte datos de la deuda (montos, días de mora), actúas normal pero el auditor lo penalizará.
-
-        INSTRUCCIONES GENERALES:
-        1. Habla estrictamente en español venezolano cotidiano y coloquial.
-        2. Mantén respuestas cortas, directas y totalmente humanas (como una llamada telefónica real).
-        3. Jamás rompas el personaje de deudor/familiar.
-        """
-        
-        api_messages = [{"role": "system", "content": system_prompt_cliente}] + st.session_state.mensajes
-        response = client.chat.completions.create(
-            model="openai/gpt-4o-mini",
-            messages=api_messages,
-            temperature=0.7
-        )
-        
-        respuesta_cliente = response.choices[0].message.content
-        st.session_state.mensajes.append({"role": "assistant", "content": respuesta_cliente})
-        st.chat_message("assistant").write(respuesta_cliente)
+    # Manejo dinámico de entrada según el modo seleccionado (Voz o Chat)
+    prompt_agente = None
     
     if st.session_state.modo_gestion == "🎙️ Modo Voz":
         st.markdown("### 🎙️ Simulación de Voz")
         st.info("💡 **Modo Voz activo:** Simula tu llamada escribiendo o dictando lo que hablas por teléfono:")
-        prompt_agente = st.text_input("Escribe tu intervención hablada:", key="input_voz")
+        prompt_agente = st.text_input("Escribe tu intervención hablada:", key=f"voz_{len(st.session_state.mensajes)}")
     else:
         prompt_agente = st.chat_input("Escribe tu intervención como agente de PRC/Cashea...")
 
@@ -214,76 +167,6 @@ elif st.session_state.pantalla == "crm":
         st.session_state.mensajes.append({"role": "user", "content": prompt_agente})
         st.chat_message("user").write(prompt_agente)
         
-        system_prompt_cliente = f"""
-        [ROL DE CLIENTE / TERCERO SIMULADO - COBRANZA CASHEA]
-        Eres una persona real (un cliente o tercero) atendiendo una llamada telefónica de un cobrador de PRC / Cashea.
-        REGLA ABSOLUTA: NUNCA digas frases de asistente o soporte técnico como "¿En qué puedo ayudarte?", "¿Cómo puedo asistirte?" o "¿Con quién hablo?". 
-        Tú eres el que recibe la llamada, por lo que debes actuar de forma natural, humana y cotidiana (ej: "¿Aló?", "¿Quién es?", "¿De dónde llaman?", o preguntar de qué se trata si te contactan).
-
-        DATOS DE LA CUENTA A TU CARGO:
-        - Nombre Titular: {cliente.get('Nombre y Apellido')}
-        - Cédula: {cliente.get('CI de identidad')}
-        - Días Mora: {cliente.get('Dias en mora')}
-        - Saldo Vencido: ${cliente.get('Saldo Pendiente con Fee (Vencido)')}
-
-        CASO ASIGNADO #{caso['id']}: {caso['titulo']}
-        COMPORTAMIENTO / REGLA DE PAGO: {caso['desc']}
-
-        REGLA DE ORO DE TERCEROS:
-        - Si eres TERCERO y el agente pregunta si te haces cargo del pago, DEBES indicar de dónde proviene el dinero según tu caso:
-          a) Si pagas con TU PROPIO DINERO o DINERO COMPARTIDO (ej. Cónyuge): Confirmas que sí es tu dinero o compartido.
-          b) Si pagas con DINERO DEL TITULAR (ej. "Ella me lo manda desde afuera"): Aclaras que es dinero de ella.
-        - Si el agente NO te pregunta de quién es el dinero pero empieza a darte datos de la deuda (montos, días de mora), actúas normal pero el auditor lo penalizará.
-
-        INSTRUCCIONES GENERALES:
-        1. Habla estrictamente en español venezolano cotidiano y coloquial.
-        2. Mantén respuestas cortas, directas y totalmente humanas (como una llamada telefónica real).
-        3. Jamás rompas el personaje de deudor/familiar.
-        """
-    
-    if st.session_state.modo_gestion == "🎙️ Modo Voz":
-        st.markdown("### 🎙️ Simulación de Voz")
-        st.info("💡 **Modo Voz activo:** Simula tu llamada escribiendo o dictando lo que hablas por teléfono:")
-        prompt_agente = st.text_input("Escribe tu intervención hablada:", key="input_voz")
-    else:
-        prompt_agente = st.chat_input("Escribe tu intervención como agente de PRC/Cashea...")
-
-    if prompt_agente:
-        st.session_state.mensajes.append({"role": "user", "content": prompt_agente})
-        st.chat_message("user").write(prompt_agente)
-        
-        system_prompt_cliente = f"""
-        [ROL DE CLIENTE / TERCERO SIMULADO - COBRANZA CASHEA]
-        Eres una persona real (un cliente o tercero) atendiendo una llamada telefónica de un cobrador de PRC / Cashea.
-        REGLA ABSOLUTA: NUNCA digas frases de asistente o soporte técnico como "¿En qué puedo ayudarte?", "¿Cómo puedo asistirte?" o "¿Con quién hablo?". 
-        Tú eres el que recibe la llamada, por lo que debes actuar de forma natural, humana y cotidiana (ej: "¿Aló?", "¿Quién es?", "¿De dónde llaman?", o preguntar de qué se trata si te contactan).
-
-        DATOS DE LA CUENTA A TU CARGO:
-        - Nombre Titular: {cliente.get('Nombre y Apellido')}
-        - Cédula: {cliente.get('CI de identidad')}
-        - Días Mora: {cliente.get('Dias en mora')}
-        - Saldo Vencido: ${cliente.get('Saldo Pendiente con Fee (Vencido)')}
-
-        CASO ASIGNADO #{caso['id']}: {caso['titulo']}
-        COMPORTAMIENTO / REGLA DE PAGO: {caso['desc']}
-
-        REGLA DE ORO DE TERCEROS:
-        - Si eres TERCERO y el agente pregunta si te haces cargo del pago, DEBES indicar de dónde proviene el dinero según tu caso:
-          a) Si pagas con TU PROPIO DINERO o DINERO COMPARTIDO (ej. Cónyuge): Confirmas que sí es tu dinero o compartido.
-          b) Si pagas con DINERO DEL TITULAR (ej. "Ella me lo manda desde afuera"): Aclaras que es dinero de ella.
-        - Si el agente NO te pregunta de quién es el dinero pero empieza a darte datos de la deuda (montos, días de mora), actúas normal pero el auditor lo penalizará.
-
-        INSTRUCCIONES GENERALES:
-        1. Habla estrictamente en español venezolano cotidiano y coloquial.
-        2. Mantén respuestas cortas, directas y totalmente humanas (como una llamada telefónica real).
-        3. Jamás rompas el personaje de deudor/familiar.
-        """
-
-    if prompt_agente:
-        st.session_state.mensajes.append({"role": "user", "content": prompt_agente})
-        st.chat_message("user").write(prompt_agente)
-        
-        # PROMPT DEL CLIENTE MEJORADO: Estrictamente humano, evita saludos de soporte
         system_prompt_cliente = f"""
         [ROL DE CLIENTE / TERCERO SIMULADO - COBRANZA CASHEA]
         Eres una persona real (un cliente o tercero) atendiendo una llamada telefónica de un cobrador de PRC / Cashea.
@@ -382,10 +265,10 @@ elif st.session_state.pantalla == "evaluacion":
         """
         
         response_eval = client.chat.completions.create(
-    model="openai/gpt-4o-mini",
-    messages=[{"role": "system", "content": system_prompt_auditor}],
-    response_format={"type": "json_object"}
-)
+            model="openai/gpt-4o-mini",
+            messages=[{"role": "system", "content": system_prompt_auditor}],
+            response_format={"type": "json_object"}
+        )
         
         resultado = json.loads(response_eval.choices[0].message.content)
 
