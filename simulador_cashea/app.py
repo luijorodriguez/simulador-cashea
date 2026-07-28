@@ -9,7 +9,10 @@ from openai import OpenAI
 st.set_page_config(page_title="Simulador de Cobranzas - PRC / Cashea", layout="wide", initial_sidebar_state="collapsed")
 
 # Inicialización de la API de OpenAI
-client = OpenAI(api_key=os.environ.get("OPENAI_API_KEY", "TU_OPENAI_API_KEY_AQUI"))
+client = OpenAI(
+    api_key=st.secrets["OPENAI_API_KEY"],
+    base_url="https://openrouter.ai/api/v1"
+)
 
 # --- MATRIZ DE LOS 30 CASOS DE CLIENTES ---
 CASOS_CLIENTES = [
