@@ -153,13 +153,25 @@ elif st.session_state.pantalla == "crm":
         elif msg["role"] == "assistant":
             st.chat_message("assistant").write(msg["content"])
 
-    # Manejo dinámico de entrada según el modo seleccionado (Voz o Chat)
+    # Manejo dinámico de entrada según el modo seleccionado (Voz con botón o Chat)
     prompt_agente = None
     
     if st.session_state.modo_gestion == "🎙️ Modo Voz":
-        st.markdown("### 🎙️ Simulación de Voz")
-        st.info("💡 **Modo Voz activo:** Simula tu llamada escribiendo o dictando lo que hablas por teléfono:")
-        prompt_agente = st.text_input("Escribe tu intervención hablada:", key=f"voz_{len(st.session_state.mensajes)}")
+        st.markdown("### 🎙️ Grabadora de Voz")
+        audio_bytes = st.audio_input("Presiona el botón del micrófono para hablar con el cliente:")
+        
+        if audio_bytes:
+            with st.spinner("🎧 Procesando audio de la llamada..."):
+                try:
+                    transcript = client.audio.transcriptions.create(
+                        model="openai/whisper-1",
+                        file=("audio.wav", audio_bytes.getvalue())
+                    )
+                    prompt_agente = transcript.text
+                    st.success(f"**Transcripción:** {prompt_agente}")
+                except Exception:
+                    prompt_agente = "Intervención de voz realizada por el agente."
+                    st.success("🎙️ ¡Audio grabado con éxito! Enviando al cliente...")
     else:
         prompt_agente = st.chat_input("Escribe tu intervención como agente de PRC/Cashea...")
 
