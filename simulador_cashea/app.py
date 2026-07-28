@@ -255,10 +255,10 @@ elif st.session_state.pantalla == "evaluacion":
         """
         
         response_eval = client.chat.completions.create(
-            model="gpt-4o",
-            messages=[{"role": "system", "content": system_prompt_auditor}],
-            response_format={"type": "json_object"}
-        )
+    model="openai/gpt-4o",  # <-- Asegúrate de agregar "openai/" adelante
+    messages=[{"role": "system", "content": system_prompt_auditor}],
+    response_format={"type": "json_object"}
+)
         
         resultado = json.loads(response_eval.choices[0].message.content)
 
