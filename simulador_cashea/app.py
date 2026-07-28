@@ -255,7 +255,7 @@ elif st.session_state.pantalla == "evaluacion":
         """
         
         response_eval = client.chat.completions.create(
-    model="openai/gpt-4o",  # <-- Asegúrate de agregar "openai/" adelante
+    model="openai/gpt-4o-mini",
     messages=[{"role": "system", "content": system_prompt_auditor}],
     response_format={"type": "json_object"}
 )
