@@ -49,7 +49,9 @@ CASOS_CLIENTES = [
 @st.cache_data
 def cargar_datos_excel():
     try:
-        df = pd.read_excel("simulador_cashea/data para clientes simulador.xlsx")
+        import os
+        ruta_excel = os.path.join(os.path.dirname(__file__), "data para clientes simulador .xlsx")
+        df = pd.read_excel(ruta_excel)
         return df
     except Exception as e:
         st.error(f"Error al cargar el archivo Excel: {e}")
