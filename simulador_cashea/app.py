@@ -182,7 +182,11 @@ elif st.session_state.pantalla == "crm":
         """
         
         api_messages = [{"role": "system", "content": system_prompt_cliente}] + st.session_state.mensajes
-        response = client.chat.completions.create(model="gpt-4o-mini", messages=api_messages, temperature=0.7)
+        response = client.chat.completions.create(
+    model="openai/gpt-4o-mini",  # <-- Importante el "openai/" para OpenRouter
+    messages=api_messages, 
+    temperature=0.7
+)
         
         respuesta_cliente = response.choices[0].message.content
         st.session_state.mensajes.append({"role": "assistant", "content": respuesta_cliente})
